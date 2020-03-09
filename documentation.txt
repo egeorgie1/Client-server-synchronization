@@ -1,0 +1,28 @@
+The program uses UNIX System V IPC-objects: shared memory and semaphores for Interprocess Communication. The semaphore object is an array of 3 binary semaphores:CLIENT (0), REQUEST (1) and RESPONSE (2). A value of 1 for the CLIENT semaphore means that the server is ready to start a communication session with a new client, and a value of 0 means that the server is busy communicating with a client at the moment. In this case every new client is blocked until the CLIENT semaphore value becomes 1.
+
+The REQUEST and RESPONSE semaphores synchronize the communication between the client and the server. The server listens in an infinite loop for client requests. It blocks until a new request comes, i.e. the value of REQUEST becomes 1. It becomes 1 every time a client writes a request to the shared memory and invokes the V operation on the REQUEST semaphore (the Dijkstra P and V operations for setting and unsetting the semaphores values are implemented in the header file comm.h). After the client writes the request, it increments the REQUEST semaphore and blocks on the RESPONSE semaphore performing the P operation on it, waiting for a response on its request. The server "wakes up", handles the request, increments the RESPONSE semaphore and blocks again on P(semid, REQUEST) waiting for its next request.
+
+The server and the client use the same key for accessing the IPC-objects (getting an identificator within the process with shmget() and semget()). Also both processes attach the shared memory segment to their own address spaces.The shared memory struct sh_buffer consists of 3 fields: operation (char op), account (char account) and an uint32_t value. The client can request 3 types of operations:
+
+ - 'C' - checks the current value of the account (specified in the account field, a char between 'A' and 'H')
+ - 'A' - addition of the standard input value to the current account value (if the read in value is positiv). The value to add is written to the value field of the shared memory.
+ - 'S' - subtraction of the standard input value from the the current account value (if the read in value is negativ and the result is non-negativ, i.e the operation is valid). The value to subtract is written to the value field of the shared memory.
+
+The server can response with following 2 results from the requested operation (the operation field of sh_buffer is used by the server for writing the response):
+
+ - 'D' - meaning "done". The operation completed without errors. The value of the account after the operation is written to the value field of the shared memory.
+ - 'I' - the operation was aborted because it was invalid. The account remains unchanged. The client terminates with a non-null exit code after receiving "invalid operation" as response.
+
+ - 'N' - used only by initialization of the shared memory by the server, means "no operation yet".
+
+Server functions:
+void handle_request(int fd); - reads the operation from the shared memory, checks its validity, reads the current account value from the accounts file with file descriptor fd, eventually modifies it according to the operation and writes the result back both to the file and to the shared memory.
+
+Client functions:
+void write_request(char oper, char acc, uint32_t val); - writes the request to the shared memory.
+
+void read_response(); - reads the response of the server from the operation field of the shared memory. If the operation was invalid the client exits with a non-null exit status after incrementing the CLIENT semaphore, i.e. setting the communication resources free.
+
+Reference:
+- man pages for UNIX System V mechanisms
+- https://en.wikipedia.org/wiki/Semaphore_(programming)
